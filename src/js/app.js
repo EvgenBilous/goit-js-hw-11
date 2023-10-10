@@ -1,32 +1,47 @@
+import { Notify } from 'notiflix/build/notiflix-notify-aio';
+import refs from './refs';
+import { showBtnLoadMore, hideBtnLoadMore } from './showHideLoadMoreFunctions';
 import { PixabayAPI } from './pixabay-api';
-import simpleLightbox from 'simplelightbox';
-// Described in documentation
-import SimpleLightbox from 'simplelightbox';
-// Additional styles import
-import 'simplelightbox/dist/simple-lightbox.min.css';
+import { createMarkup } from './create-markup';
+import { lightbox } from './lightbox';
 const pixabayAPI = new PixabayAPI();
-//
-// pixabayAPI.getPhotos().then(res => {
-//   console.log(res);
-// })
-const lightbox = new SimpleLightbox('.gallery a', {
-  /* options */
-});
-
-const refs = {
-  list: document.querySelector('.gallery'),
-  loadMoreBtn: document.querySelector('.load-more'),
-  form: document.querySelector('.search-form'),
-};
 
 refs.form.addEventListener('submit', handleSubmit);
+refs.loadMoreBtn.addEventListener('click', handleClick);
+
+async function handleClick(event) {
+  pixabayAPI.page += 1;
+  try {
+    const response = await pixabayAPI.getPhotos();
+
+    const markup = createMarkup(response.hits);
+    refs.list.insertAdjacentHTML('beforeend', markup);
+    lightbox.refresh();
+    const { height: cardHeight } = document
+      .querySelector('.gallery')
+      .firstElementChild.getBoundingClientRect();
+
+    window.scrollBy({
+      top: cardHeight * 2,
+      behavior: 'smooth',
+    });
+    const lastPage = Math.ceil(response.totalHits / pixabayAPI.perPage);
+    if (lastPage === pixabayAPI.page) {
+      hideBtnLoadMore();
+
+      Notify.info("We're sorry, but you've reached the end of search results.");
+    }
+  } catch (error) {
+    console.log(error);
+  }
+}
 
 async function handleSubmit(event) {
   event.preventDefault();
   const searchQueryAPI = event.currentTarget.elements.searchQuery.value.trim();
 
   if (!searchQueryAPI) {
-    return alert('Please, enter search input');
+    return Notify.failure('Please, enter search input');
   }
 
   pixabayAPI.query = searchQueryAPI;
@@ -35,44 +50,32 @@ async function handleSubmit(event) {
     const response = await pixabayAPI.getPhotos();
     if (response.hits.length === 0) {
       refs.list.innerHTML = '';
-      return alert('No data by your input');
+      hideBtnLoadMore();
+
+      return Notify.warning('No data by your input');
     }
 
     const markup = createMarkup(response.hits);
     refs.list.innerHTML = markup;
+
     lightbox.refresh();
 
-    if (response.totalHits < pixabayAPI.perPage) return;
+    const { height: cardHeight } = document
+      .querySelector('.gallery')
+      .firstElementChild.getBoundingClientRect();
 
-    refs.loadMoreBtn.classList.remove('is-hidden');
+    window.scrollBy({
+      top: cardHeight * 2,
+      behavior: 'smooth',
+    });
+
+    if (response.totalHits > 1) {
+      Notify.success(`Hooray! We found ${response.totalHits} images`);
+    }
+
+    if (response.totalHits < pixabayAPI.perPage) return hideBtnLoadMore();
+    showBtnLoadMore();
   } catch (error) {
     console.log(error);
   }
-}
-
-function createMarkup(arr) {
-  return arr
-    .map(item => {
-      return `
-      <li class="photo-card">
-      <a href="${item.largeImageURL}">
-   <img src="${item.webformatURL}" alt="${item.tags}" loading="lazy" />
-   </a>
-  <div class="info">
-    <p class="info-item">
-      <b>Likes ${item.likes}</b>
-    </p>
-    <p class="info-item">
-      <b>Views ${item.views}</b>
-    </p>
-    <p class="info-item">
-      <b>Comments ${item.comments}</b>
-    </p>
-    <p class="info-item">
-      <b>Downloads ${item.downloads}</b>
-    </p>
-  </div>
-</li>`;
-    })
-    .join('');
 }
